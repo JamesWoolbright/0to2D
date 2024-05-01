@@ -1,44 +1,72 @@
 #include <Windows.h>
+#include <stdint.h>
 
 static bool Running;
+
 static BITMAPINFO bitMapInfo;
 static void *BitMapMemory;
-static HBITMAP BitMapHandle;
-static HDC BitMapDeviceContext;
+static int BitMapWidth;
+static int BitMapHeight;
+static int BytesPerPixel = 4;
+
+static void
+RenderWeirdGradient(int XOffSet, int YOffSet)
+{
+	int Width = BitMapWidth;
+	int Height = BitMapHeight;
+
+
+	int Pitch = Width*BytesPerPixel;
+	uint8_t *Row = (uint8_t *)BitMapMemory;
+	for (int Y = 0; Y < BitMapHeight; ++Y) {
+		uint8_t *Pixel = (uint8_t *)Row;
+		for (int X = 0; X < BitMapWidth; ++X) {
+			*Pixel = (uint8_t)(X + XOffSet); // B
+			++Pixel;
+			*Pixel = (uint8_t)(Y + YOffSet); // G
+			++Pixel;
+			*Pixel = 255; // R
+			++Pixel;
+			*Pixel = 0;
+			++Pixel;
+		}
+		Row += Pitch;
+	}
+}
 
 static void ResizeDIBSection(int Width, int Height)
 {
-	if (BitMapHandle) {
-		DeleteObject(BitMapHandle);
-	}
-	
-	if (!BitMapDeviceContext) {
-		BitMapDeviceContext = CreateCompatibleDC(0);
+
+	if(BitMapMemory) {
+		VirtualFree(BitMapMemory, 0, MEM_RELEASE);
 	}
 
+	BitMapWidth = Width;
+	BitMapHeight = Height;
+
 	bitMapInfo.bmiHeader.biSize = sizeof(bitMapInfo.bmiHeader);
-	bitMapInfo.bmiHeader.biWidth = Width;
-	bitMapInfo.bmiHeader.biHeight = Height;
+	bitMapInfo.bmiHeader.biWidth = BitMapWidth;
+	bitMapInfo.bmiHeader.biHeight = -BitMapHeight;
 	bitMapInfo.bmiHeader.biPlanes = 1;
 	bitMapInfo.bmiHeader.biBitCount = 32;
 	bitMapInfo.bmiHeader.biCompression = BI_RGB;
+	
+	int BytesPerPixel = 4;
+	int BitMapMemorySize = (BitMapWidth * BitMapHeight)*BytesPerPixel;
+	BitMapMemory = VirtualAlloc(0, BitMapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 
-
-	BitMapHandle = CreateDIBSection(
-		BitMapDeviceContext,
-		&bitMapInfo,
-		DIB_RGB_COLORS,
-		&BitMapMemory,
-		0,
-		0);
 
 }
 
-static void UpdateScreen(HDC DeviceContext, int X, int Y, int Width, int Height)
+static void UpdateScreen(HDC DeviceContext, RECT *ClientRect, int X, int Y, int Width, int Height)
 {
+	int WindowWidth = ClientRect->right - ClientRect->left;
+	int WindowHeight = ClientRect->bottom - ClientRect->top;
 	StretchDIBits(DeviceContext,
-		X, Y, Width, Height,
-		X, Y, Width, Height,
+		/*X, Y, Width, Height,
+		X, Y, Width, Height,*/
+		0, 0, BitMapWidth, BitMapHeight,
+		0, 0, WindowWidth, WindowHeight,
 		BitMapMemory, &bitMapInfo, DIB_RGB_COLORS, 
 		SRCCOPY
 	);
@@ -63,7 +91,11 @@ LRESULT CALLBACK WindowProcedure(HWND Window, UINT Message, WPARAM WParameter, L
 			int Y = Paint.rcPaint.top;
 			int Width = Paint.rcPaint.right - Paint.rcPaint.left;
 			int Height = Paint.rcPaint.bottom - Paint.rcPaint.top;
-			UpdateScreen(DeviceContext, X, Y, Width, Height);
+
+			RECT ClientRect;
+			GetClientRect(Window, &ClientRect);
+
+			UpdateScreen(DeviceContext, &ClientRect, X, Y, Width, Height);
 			EndPaint(Window, &Paint);
 		} break;
 		default: {
@@ -99,15 +131,26 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR pCmdLine, i
 
 	if (!WindowHandle) { return 0; }
 	Running = true;
+	int XOffset = 0;
+	int YOffset = 0;
 	while(Running) {
+
 		MSG Message;
-		BOOL MessageResult = GetMessage(&Message, 0, 0, 0);
-		if (MessageResult > 0) {
+		while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE)) {
+			if (Message.message == WM_QUIT) { Running = false; }
 			TranslateMessage(&Message);
 			DispatchMessage(&Message);
-		} else {
-			break;
 		}
+		RenderWeirdGradient(XOffset, YOffset);
+		HDC DeviceContext = GetDC(WindowHandle);
+		RECT ClientRect;
+		GetClientRect(WindowHandle, &ClientRect);
+		int WindowWidth = ClientRect.right - ClientRect.left;
+		int WindowHeight = ClientRect.bottom - ClientRect.top;
+		UpdateScreen(DeviceContext, &ClientRect, 0, 0, WindowWidth, WindowHeight);	
+		ReleaseDC(WindowHandle, DeviceContext);
+		++XOffset;
+		++YOffset;
 	}
 	
 	return 0;
