@@ -1,7 +1,7 @@
 #include <Windows.h>
 #include <stdint.h>
-#include <Xinput.h>
 #include <dsound.h>
+#include <math.h>
 
 struct win32_bufferinfo {
     BITMAPINFO Info;
@@ -92,23 +92,30 @@ static win32_bufferinfo BackBuffer;
 static int XOffset = 0;
 static int YOffset = 0;
 
-static void
-RenderWeirdGradient(win32_bufferinfo *Buffer,int XOffSet, int YOffSet)
-{
 
+
+static void RenderWeirdGradient(win32_bufferinfo *Buffer, int XOffset, int YOffset)
+{
     uint8_t *Row = (uint8_t *)Buffer->Memory;
     for (int Y = 0; Y < Buffer->Height; ++Y) {
         uint32_t *Pixel = (uint32_t *)Row;
         for (int X = 0; X < Buffer->Width; ++X) {
-            uint8_t Red = (X + XOffSet);
-            uint8_t Blue = (Y + YOffSet);
+            // Calculate the Red component with a horizontal gradient effect
+            uint8_t Red = ((X + XOffset) ^ (Y + YOffset)) + (Buffer->Width - X);
 
+            uint8_t Green = (X - XOffset) ^ (Y - YOffset);
+            uint8_t Blue = (X * Y) ^ (XOffset + YOffset);
+        
+            // Combine the color components into a single pixel value
+            uint32_t Color = (Red << 16) | (Green << 8) | Blue;
 
-            *Pixel++ = (Red << 16 | Blue);
+            // Set the pixel value
+            *Pixel++ = Color;
         }
         Row += Buffer->Pitch;
     }
 }
+
 
 static void ResizeDIBSection(win32_bufferinfo *Buffer,int Width, int Height)
 {
@@ -270,6 +277,9 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR pCmdLine, i
     InitDSound(WindowHandle, BufferSize, SamplesPerSecond);
     SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
     HDC DeviceContext = GetDC(WindowHandle);
+
+    int currentFrame = 0;
+
     while(Running) {
 
         MSG Message;
@@ -279,7 +289,7 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR pCmdLine, i
             DispatchMessage(&Message);
         }
 
-        for(DWORD ControllerIndex = 0; ControllerIndex < XUSER_MAX_COUNT; ++ControllerIndex) {
+        /*for(DWORD ControllerIndex = 0; ControllerIndex < XUSER_MAX_COUNT; ++ControllerIndex) {
             XINPUT_STATE ControllerState;
             if(XInputGetState(ControllerIndex, &ControllerState) == ERROR_SUCCESS) {
                 // Controller is plugged up
@@ -304,9 +314,8 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR pCmdLine, i
                 XOffset += ThumbStickX << 14;
                 YOffset -= ThumbStickY << 14;
             }       
-        }           
-           
-        RenderWeirdGradient(&BackBuffer, XOffset, YOffset);    
+        }           */
+        RenderWeirdGradient(&BackBuffer, XOffset, YOffset);
         // DirectSound Output tezt!
         DWORD PlayCursor;
         DWORD WriteCursor;
@@ -332,14 +341,14 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR pCmdLine, i
                 int16_t *SampleOut = (int16_t *)Region1;
                 DWORD Region1SampleCount = Region1Size/BytesPerSample;
                 for (DWORD SampleIndex = 0; SampleIndex < Region1SampleCount; ++SampleIndex) {
-                    int16_t SampleValue = ((RunningSampleIndex++ / (SquareWavePeriod / 2)) % 2) ? 8000 : -8000;
+                    int16_t SampleValue = ((RunningSampleIndex++ / (SquareWavePeriod / 2)) % 2) ? 1000 : -1000;
                     *SampleOut++ = SampleValue;
                     *SampleOut++ = SampleValue;
                 }
                 DWORD Region2SampleCount = Region2Size/BytesPerSample;
                 SampleOut = (int16_t *)Region2;
                 for (DWORD SampleIndex = 0; SampleIndex < Region2SampleCount; ++SampleIndex) {
-                    int16_t SampleValue = ((RunningSampleIndex++ / (SquareWavePeriod / 2)) % 2) ? 8000 : -8000;
+                    int16_t SampleValue = ((RunningSampleIndex++ / (SquareWavePeriod / 2)) % 2) ? 1000 : -1000;
                     *SampleOut++ = SampleValue;
                     *SampleOut++ = SampleValue;
                 }
